@@ -1,0 +1,504 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        144
+      ],
+      "id": "7d70e343-904e-4da5-8a3b-bc9442509495",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "user",
+        "owner": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf"
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        304,
+        144
+      ],
+      "id": "65e64ca3-d017-4b3b-a0db-f200f483f5e3",
+      "name": "Get a user's repositories",
+      "webhookId": "c95f0111-471c-4d81-b0b8-062eea5881b8",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "Lo8eX6UdRcCXWgDF",
+          "name": "GitHub OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a4ba40e6-8b38-417b-9a25-5f5bc7920d52",
+              "leftValue": "={{ $json.pushed_at }}",
+              "rightValue": "={{ $now.minus({hours: 6}) }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "after"
+              }
+            },
+            {
+              "id": "78d9383a-1853-436b-af18-de75264b3d68",
+              "leftValue": "={{ $json.topics.toString() }}",
+              "rightValue": "portfolio",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        512,
+        144
+      ],
+      "id": "a03d228a-5406-4ca4-8990-307cde23d18e",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf/Fawwzrf"
+        },
+        "filePath": "README.md",
+        "asBinaryProperty": false,
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        144
+      ],
+      "id": "1051d97b-1cf8-4697-a1f5-032134033c71",
+      "name": "Get a file",
+      "webhookId": "ad825a15-e687-4e4a-88fb-3c8af452bfc2",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "Lo8eX6UdRcCXWgDF",
+          "name": "GitHub OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Ambil nama proyek dari node awal dan deskripsi dari Gemini\nconst newProjectName = $('Code in JavaScript1').item.json.name;\nconst geminiData = JSON.parse($('Message a model').item.json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim());\nconst newShortDesc = geminiData.short_description;\n\n// Baca isi README profil Anda (terjemahkan dari Base64)\nlet readmeContent = Buffer.from($input.item.json.content, 'base64').toString('utf8');\n\n// Cari area di antara penanda gaib\nconst startMarker = '`:`';\nconst endMarker = '`latest`';\nconst regex = new RegExp(`${startMarker}[\\\\s\\\\S]*?${endMarker}`);\nconst match = readmeContent.match(regex);\n\nif (match) {\n    // Bersihkan daftar proyek yang ada saat ini\n    let currentProjects = match[0]\n        .replace(startMarker, '')\n        .replace(endMarker, '')\n        .trim()\n        .split('\\n')\n        .filter(line => line.trim() !== '');\n\n    // Cegah duplikasi jika proyek yang sama di-sync ulang\n    currentProjects = currentProjects.filter(line => !line.includes(`**${newProjectName}**`));\n\n    // Siapkan teks baru\n    const newEntry = `- **${newProjectName}** : ${newShortDesc}`;\n\n    // Masukkan proyek baru di baris paling atas (LIFO)\n    currentProjects.unshift(newEntry);\n\n    // Potong array agar maksimal hanya berisi 4 item\n    currentProjects = currentProjects.slice(0, 4);\n\n    // Paksa semua item memiliki tepat 2 spasi di depannya\n    currentProjects = currentProjects.map(line => {\n        return `  ${line.trimStart()}`;\n    });\n\n    // Rakit kembali teksnya\n    const newSection = `${startMarker}\\n${currentProjects.join('\\n')}\\n${endMarker}`;\n\n    // Timpa isi README lama dengan yang baru\n    readmeContent = readmeContent.replace(regex, newSection);\n}\n\n// Kembalikan teks ke bentuk Base64 untuk dikirim kembali ke GitHub\nreturn {\n    updated_readme_base64: Buffer.from(readmeContent).toString('base64'),\n    commit_message: `Update recent projects: ${newProjectName}`\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        368
+      ],
+      "id": "5f0742bf-77ea-4257-9697-66eef0db862b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "edit",
+        "owner": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf/Fawwzrf"
+        },
+        "filePath": "README.md",
+        "fileContent": "={{ $json.updated_readme_base64 }}",
+        "commitMessage": "={{ $json.commit_message }}"
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        112
+      ],
+      "id": "1cb455bb-4027-4909-9c47-078676ae2f28",
+      "name": "Edit a file",
+      "webhookId": "f5c408d6-bb79-4e95-bd4b-7b016a8d1a20",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "Lo8eX6UdRcCXWgDF",
+          "name": "GitHub OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://documee-by-fawwzrf.vercel.app/api/projects/sync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "={{ $('Code in JavaScript1').item.json.name.toLowerCase().replace(/[^a-z0-9]+/g, \"-\").replace(/(^-|-$)/g, \"\") }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('Code in JavaScript1').item.json.name }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ JSON.parse($json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim()).short_description }}"
+            },
+            {
+              "name": "github_repo_id",
+              "value": "={{ $('Code in JavaScript1').item.json.id }}"
+            },
+            {
+              "name": "stars",
+              "value": "={{ $('Code in JavaScript1').item.json.stargazers_count }}"
+            },
+            {
+              "name": "forks",
+              "value": "={{ $('Code in JavaScript1').item.json.forks_count }}"
+            },
+            {
+              "name": "language",
+              "value": "={{ $('Code in JavaScript1').item.json.language || 'Lainnya' }}"
+            },
+            {
+              "name": "tech_stack",
+              "value": "={{ JSON.parse($json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim()).tech_stack }}"
+            },
+            {
+              "name": "categories",
+              "value": "={{   (function() {     const lang = $json.language || '';     if (lang === 'Dart') return ['MobDev'];     if (lang === 'Python' || lang === 'Jupyter Notebook') return ['AI-Engineering', 'Data Science/ML'];     if (lang === 'PHP' || lang === 'TypeScript') return ['WebDev'];     return [];   })() }}"
+            },
+            {
+              "name": "long_description",
+              "value": "={{ JSON.parse($json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim()).long_description }}"
+            },
+            {
+              "name": "categories",
+              "value": "={{ JSON.parse($json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim()).categories }}"
+            },
+            {
+              "name": "readme_content",
+              "value": "={{ JSON.parse($json.content.parts[0].text.replace(/```json/gi, '').replace(/```/gi, '').trim()).readme_content }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1744,
+        -80
+      ],
+      "id": "dc3b3691-b785-4264-a010-e9e4a825bf9e",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "V6aLkIXItGLuWa1L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Saya memiliki data repositori GitHub sebagai berikut:\n- Nama Proyek: {{ $json.name }}\n- Deskripsi Asli: {{ $json.description || 'No description provided' }}\n- Bahasa Pemrograman: {{ $json.language || 'Others' }}\n- Topik/Tech Stack: {{ $json.topics || 'None' }}\n- Isi README Asli:\n\"\"\"\n{{ $json.original_readme }}\n\"\"\"\n\nTolong hasilkan data JSON yang valid dengan 4 parameter berikut. \nPENTING: TULIS SEMUA KONTEN (VALUE) DALAM BAHASA INGGRIS (ENGLISH) YANG PROFESIONAL:\n1. \"categories\": Berikan array (maksimal 2) kategori yang paling cocok dari daftar ini: [\"MobDev\", \"WebDev\", \"AI-Engineering\", \"Data Science/ML\", \"IoT\"].\n2. \"tech_stack\": Berikan array yang berisi teknologi, framework, atau library yang digunakan (contoh: [\"Flutter\", \"Dart\", \"Firebase\"] atau [\"Python\", \"TensorFlow\"]). Analisis dari isi README dan bahasa utamanya.\n3. \"short_description\": Buat ringkasan deskripsi proyek yang sangat menarik untuk portofolio (maksimal 2 kalimat, dalam bahasa Inggris).\n4. \"long_description\": Kembangkan informasi dari README dan data di atas menjadi 2 paragraf profesional dalam bahasa Inggris yang menjelaskan tujuan, fitur, atau arsitektur proyek ini.\n5. \"readme_content\": Buatkan ringkasan dari README asli yang diformat dengan rapi menggunakan sintaks Markdown (harus memuat Project Title, Short Description, Tech Stack, dan standar usage/installation, semuanya dalam bahasa Inggris).\n\nPENTING: Kembalikan respons HANYA berupa JSON murni tanpa blok kode markdown (tanpa awalan ```json dan tanpa akhiran ```)."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1104,
+        -96
+      ],
+      "id": "a917a884-9717-4374-bd7e-435b3f03d698",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "eqF06qwA4H1XjZ4e",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "get",
+        "owner": {
+          "__rl": true,
+          "value": "Fawwzrf",
+          "mode": "list",
+          "cachedResultName": "Fawwzrf",
+          "cachedResultUrl": "https://github.com/Fawwzrf"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "={{ $json.html_url }}",
+          "mode": "url"
+        },
+        "filePath": "README.md",
+        "asBinaryProperty": false,
+        "additionalParameters": {}
+      },
+      "type": "n8n-nodes-base.github",
+      "typeVersion": 1.1,
+      "position": [
+        688,
+        -96
+      ],
+      "id": "67ed8897-887d-4ce9-926a-1ddb57ac9afa",
+      "name": "Get a file1",
+      "webhookId": "5f0d3e46-b831-4d56-9784-3eb76987022f",
+      "credentials": {
+        "githubOAuth2Api": {
+          "id": "Lo8eX6UdRcCXWgDF",
+          "name": "GitHub OAuth2 API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Mengambil data awal dari node If\nconst repoData = $('If').item.json;\nlet decodedReadme = \"Tidak ada README di repositori ini.\";\n\n// Mengecek jika file README berhasil ditarik dari GitHub\nif ($input.item.json && $input.item.json.content) {\n    decodedReadme = Buffer.from($input.item.json.content, 'base64').toString('utf8');\n}\n\n// Menggabungkan data repo dengan teks README\nreturn {\n    ...repoData,\n    original_readme: decodedReadme\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "317b22b0-302b-451e-a028-a4eade5235b4",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1488,
+        -96
+      ],
+      "id": "f6f10621-2532-4b0a-afde-62364c6a0c38",
+      "name": "Loop Over Items"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get a user's repositories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a user's repositories": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Get a file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Edit a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Get a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit a file": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": -1,
+    "availableInMCP": false
+  },
+  "versionId": "ad9e4735-698a-4526-92b8-4d72384b1f2d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4a96d04b3c6cf149d075556fa3c84625bcb1d7e6659fc6f199a8d37b0b712968"
+  },
+  "id": "BainDJf50CvqEMFD",
+  "tags": []
+}
